@@ -38,7 +38,6 @@ import {
   requestNotificationPermission,
   shareLocation,
   openSms,
-  openWhatsApp,
 } from '../services/notifications';
 import { alarmService } from '../services/alarm';
 
@@ -218,14 +217,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const msg = `¡EMERGENCIA! Necesito ayuda urgente.\n📍 ${loc.address ?? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`}\n🗺️ ${url}`;
       setNotifiedContactIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
 
-      if (contact.phone === '123') {
-        openSms('123', msg);
-      } else if (contact.phone.replace(/\D/g, '').length > 8) {
-        openWhatsApp(contact.phone, msg);
-      } else {
+      // Los contactos con WhatsApp se notifican automáticamente vía AgentKit.
+      // Solo abrimos SMS para números cortos / servicios de emergencia (ej. 123).
+      if (contact.phone.replace(/\D/g, '').length <= 8) {
         openSms(contact.phone, msg);
       }
-      notify(`Alerta enviada a ${contact.name}`, 'Se abrió la app de mensajes con tu ubicación.');
+      notify(`Alerta enviada a ${contact.name}`, 'Se notificó al contacto con tu ubicación.');
     },
     [contacts, location]
   );
@@ -243,25 +240,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         : `\n\n📍 Obteniendo ubicación GPS...`;
       const msg = `🚨 ¡EMERGENCIA SOS — SaveUs!\n\nNecesito ayuda urgente.${locationLine}\n⏰ ${time}`;
 
-      // Abrir WhatsApp para el primer contacto (popup permitido por gesture del usuario)
+      // Los contactos con WhatsApp se notifican automáticamente vía AgentKit.
+      // Solo abrimos SMS para números cortos / servicios de emergencia (ej. 123).
       const primary = contacts[0];
-      if (primary.phone.replace(/\D/g, '').length > 8) {
-        openWhatsApp(primary.phone, msg);
-      } else {
+      if (primary.phone.replace(/\D/g, '').length <= 8) {
         openSms(primary.phone, msg);
       }
 
-      // Abrir los demás contactos con un pequeño delay (algunos navegadores los permiten)
       for (let i = 1; i < contacts.length; i++) {
         const c = contacts[i];
-        const delay = i * 600;
-        setTimeout(() => {
-          if (c.phone.replace(/\D/g, '').length > 8) {
-            openWhatsApp(c.phone, msg);
-          } else {
-            openSms(c.phone, msg);
-          }
-        }, delay);
+        if (c.phone.replace(/\D/g, '').length <= 8) {
+          setTimeout(() => openSms(c.phone, msg), i * 600);
+        }
       }
     }
 
@@ -376,19 +366,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [sendAlert]);
 
   const cancelSOS = useCallback(async () => {
-    const loc = location;
-    const locText = loc ? `\n📍 ${loc.address ?? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`}` : '';
-    const msg = `✅ FALSA ALARMA — Estoy bien. La alerta de emergencia ha sido cancelada.${locText}`;
-
-    // Abrir WhatsApp ANTES de cualquier await (user gesture context)
-    const validContacts = contacts.filter((c) => c.phone !== '123' && c.phone.replace(/\D/g, '').length > 8);
-    if (validContacts.length > 0) {
-      openWhatsApp(validContacts[0].phone, msg);
-      for (let i = 1; i < validContacts.length; i++) {
-        setTimeout(() => openWhatsApp(validContacts[i].phone, msg), i * 600);
-      }
-    }
-
+    // La cancelación se notifica automáticamente a los contactos vía AgentKit
+    // (cancelarEmergenciaAgentKit más abajo).
     alarmService.stop();
     setAlarmActive(false);
     setAlertSent(false);
@@ -419,7 +398,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     notify('Emergencia cancelada', 'Se ha desactivado la alerta. Estás a salvo.');
 
     setScreen('home');
-  }, [contacts, location, safeMode, stopRecordingInternal, addLog]);
+  }, [safeMode, stopRecordingInternal, addLog]);
 
   const toggleSafeMode = useCallback(async () => {
     const next = !safeMode;
