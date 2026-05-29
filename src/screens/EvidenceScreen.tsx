@@ -60,7 +60,7 @@ export function EvidenceScreen() {
     URL.revokeObjectURL(url);
   };
 
-  const handlePreview = async (id: string, type: 'video' | 'audio') => {
+  const handlePreview = async (id: string, type: 'video' | 'audio' | 'photo') => {
     const blob = await getEvidenceBlob(id);
     if (!blob) return;
     if (previewUrl) URL.revokeObjectURL(previewUrl);

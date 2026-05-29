@@ -7,6 +7,11 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
+import {
+  activarEmergenciaAgentKit,
+  actualizarUbicacionAgentKit,
+  cancelarEmergenciaAgentKit,
+} from '../services/agentkit';
 import type { AiLogEntry, EmergencyContact, EvidenceRecord, GeoLocation, RoutePoint, SOSOrigin } from '../types';
 import {
   getContacts,
@@ -84,6 +89,7 @@ interface AppState {
   startRouteTracking: () => Promise<void>;
   stopRouteTracking: () => void;
   vibrate: (pattern?: number | number[]) => void;
+  agentkitEmergenciaId: string | null;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -119,9 +125,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sosOrigin, setSosOrigin] = useState<SOSOrigin | null>(null);
   const [sosClipUrl, setSosClipUrl] = useState<string | null>(null);
   const [sosClipType, setSosClipType] = useState<'video' | 'audio' | null>(null);
+  const [agentkitEmergenciaId, setAgentkitEmergenciaId] = useState<string | null>(null);
 
   const recordingRef = useRef(false);
   const aiTriggeredRef = useRef(false);
+  const agentkitIdRef = useRef<string | null>(null);
+  const locationRef = useRef<GeoLocation | null>(null);
+  const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const vibrate = useCallback((pattern: number | number[] = 100) => {
     if ('vibrate' in navigator) navigator.vibrate(pattern);
@@ -192,6 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [vibrate, stopRecordingInternal, startRecordingInternal]);
 
   const updateLocation = useCallback(async (loc: GeoLocation) => {
+    locationRef.current = loc;
     setLocation(loc);
     setLocationError(null);
     const address = await reverseGeocode(loc.lat, loc.lng);
@@ -290,6 +301,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setNotifiedContactIds((prev) => prev.includes(c.id) ? prev : [...prev, c.id]);
     }
 
+    // ── Integración AgentKit: envío automático por WhatsApp + link de tracking único ──
+    const eid = crypto.randomUUID();
+    agentkitIdRef.current = eid;
+    setAgentkitEmergenciaId(eid);
+
+    activarEmergenciaAgentKit({
+      id: eid,
+      nombre_usuario: 'Usuario SaveUs',
+      contacts: contacts.map((c) => ({ name: c.name, phone: c.phone, relation: c.relation })),
+      location: resolvedLoc
+        ? { lat: resolvedLoc.lat, lng: resolvedLoc.lng, accuracy: resolvedLoc.accuracy, timestamp: Date.now(), address: resolvedLoc.address }
+        : null,
+    }).then((res) => {
+      if (res?.tracking_url) addLog(`AgentKit: link de seguimiento generado`, false);
+    }).catch(() => {});
+
+    // Enviar actualizaciones de GPS cada 15 segundos mientras la emergencia está activa
+    if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
+    locationIntervalRef.current = setInterval(() => {
+      const loc = locationRef.current;
+      const id = agentkitIdRef.current;
+      if (id && loc) actualizarUbicacionAgentKit(id, loc.lat, loc.lng, loc.accuracy);
+    }, 15000);
+    // ── fin AgentKit ──────────────────────────────────────────────────────────
+
     addLog('Capturando clip de evidencia (15s)...', false);
     captureClip(15000, recordingVideo, recordingAudio)
       .then(async ({ blob, type }) => {
@@ -366,6 +402,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (recordingRef.current) await stopRecordingInternal();
     if (!safeMode) stopWatching();
+
+    // Notificar cancelación a AgentKit (detiene interval y avisa contactos)
+    if (locationIntervalRef.current) {
+      clearInterval(locationIntervalRef.current);
+      locationIntervalRef.current = null;
+    }
+    const eid = agentkitIdRef.current;
+    if (eid) {
+      cancelarEmergenciaAgentKit(eid).catch(() => {});
+      agentkitIdRef.current = null;
+      setAgentkitEmergenciaId(null);
+    }
 
     addLog('Emergencia cancelada — sistema en modo seguro', false);
     notify('Emergencia cancelada', 'Se ha desactivado la alerta. Estás a salvo.');
@@ -613,6 +661,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         startRouteTracking,
         stopRouteTracking,
         vibrate,
+        agentkitEmergenciaId,
       }}
     >
       {children}

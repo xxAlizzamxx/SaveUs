@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Mic, Image, Settings, Circle, RotateCcw, Check } from 'lucide-react';
+import { Camera, Mic, Image, Circle, RotateCcw, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Toggle } from '../components/Toggle';
 import { saveEvidence } from '../services/storage';
