@@ -41,12 +41,31 @@ function txStore<T>(
 }
 
 const DEFAULT_CONTACTS: EmergencyContact[] = [
-  { id: '1', name: 'María Elena', relation: 'Madre', phone: '+57 319 215 2335', initials: 'ME' },
-  { id: '2', name: 'Camila R.', relation: 'Mejor amiga', phone: '+57 318 205 8700', initials: 'CR' },
-  { id: '3', name: 'Contacto 3', relation: 'Emergencias', phone: '+57 304 257 7904', initials: 'C3' },
+  { id: '1', name: 'Contacto 1', relation: 'Emergencias', phone: '+57 319 215 2335', initials: 'C1' },
+  { id: '2', name: 'Contacto 2', relation: 'Emergencias', phone: '+57 315 048 9702', initials: 'C2' },
+  { id: '3', name: 'Contacto 3', relation: 'Emergencias', phone: '+57 301 405 9823', initials: 'C3' },
+  { id: '4', name: 'Contacto 4', relation: 'Emergencias', phone: '+57 324 404 6468', initials: 'C4' },
 ];
 
+// Version de los contactos por defecto. Sube este numero cuando cambien los
+// contactos para forzar que se vuelvan a sembrar en navegadores ya usados.
+const CONTACTS_SEED_VERSION = '2';
+const SEED_KEY = 'saveus_contacts_seed';
+
+async function clearContacts(): Promise<void> {
+  await txStore('contacts', 'readwrite', (s) => s.clear());
+}
+
 export async function getContacts(): Promise<EmergencyContact[]> {
+  // Migracion automatica: si los contactos por defecto cambiaron de version,
+  // reemplazamos los que estaban guardados en el navegador (una sola vez).
+  if (localStorage.getItem(SEED_KEY) !== CONTACTS_SEED_VERSION) {
+    await clearContacts();
+    for (const c of DEFAULT_CONTACTS) await saveContact(c);
+    localStorage.setItem(SEED_KEY, CONTACTS_SEED_VERSION);
+    return DEFAULT_CONTACTS;
+  }
+
   const contacts = await txStore<EmergencyContact[]>('contacts', 'readonly', (s) => s.getAll());
   if (!contacts || (contacts as EmergencyContact[]).length === 0) {
     for (const c of DEFAULT_CONTACTS) await saveContact(c);
