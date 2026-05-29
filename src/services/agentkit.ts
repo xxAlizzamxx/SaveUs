@@ -1,4 +1,6 @@
-const AGENTKIT_URL = (import.meta.env.VITE_AGENTKIT_URL as string) || 'http://localhost:8000';
+const AGENTKIT_URL =
+  (import.meta.env.VITE_AGENTKIT_URL as string) ||
+  'https://saveus-whatsapp-agentkit.onrender.com';
 
 export interface AgentkitContacto {
   name: string;
